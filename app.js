@@ -218,3 +218,72 @@ if (new URLSearchParams(location.search).has('nudge')) {
   });
   apply();
 }
+
+// ─── PIN EDITOR (open the page with ?edit at the end of the address) ─────────
+// Drag any pin to a new position. Changes are remembered in this browser only,
+// until you download them and send them on. Do not use together with ?nudge.
+if (new URLSearchParams(location.search).has('edit')) {
+  const KEY = 'skilleby-edits';
+  const orig = placesData.map(p => [p.lat, p.lng]);
+  let edits = {};
+  try { edits = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(edits)); } catch (e) {} };
+
+  function place_(i, lat, lng) {
+    const { place, marker } = allMarkers[i];
+    place.lat = lat; place.lng = lng;
+    marker.setLatLng(shifted(place, OFFSET_NORTH_M, OFFSET_EAST_M));
+  }
+  Object.entries(edits).forEach(([i, [lat, lng]]) => { if (allMarkers[i]) place_(i, lat, lng); });
+
+  allMarkers.forEach(({ place, marker }, i) => {
+    marker.dragging.enable();
+    marker.on('dragend', () => {
+      const ll = marker.getLatLng();
+      place.lat = ll.lat - OFFSET_NORTH_M * M_LAT;
+      place.lng = ll.lng - OFFSET_EAST_M * M_LNG;
+      edits[i] = [place.lat, place.lng];
+      save(); update();
+    });
+  });
+
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:10000;background:#f5f0e8;border:2px solid #7c5c3e;border-radius:8px;padding:10px 12px;font:13px Lato,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:230px';
+  box.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px">Flytta pins (dra dem)</div>
+    <div id="edit-count" style="margin-bottom:8px"></div>
+    <button id="edit-copy">Kopiera ändringar</button>
+    <button id="edit-dl">Ladda ner</button>
+    <button id="edit-reset">Ångra alla</button>`;
+  document.body.appendChild(box);
+  box.querySelectorAll('button').forEach(b => b.style.cssText = 'margin:2px 2px 0 0;padding:4px 8px;cursor:pointer');
+
+  function update() {
+    box.querySelector('#edit-count').textContent = `${Object.keys(edits).length} pins flyttade`;
+  }
+  function report() {
+    return JSON.stringify(Object.entries(edits).map(([i, [lat, lng]]) => ({
+      index: +i,
+      layer: placesData[i].layer,
+      name: placesData[i].name,
+      old: orig[i],
+      new: [+lat.toFixed(7), +lng.toFixed(7)],
+    })), null, 1);
+  }
+  box.querySelector('#edit-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(report()); alert('Kopierat! Klistra in det i chatten.'); }
+    catch (e) { alert('Kunde inte kopiera. Använd Ladda ner i stället.'); }
+  };
+  box.querySelector('#edit-dl').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([report()], { type: 'application/json' }));
+    a.download = 'skilleby-pinnar-andringar.json';
+    a.click();
+  };
+  box.querySelector('#edit-reset').onclick = () => {
+    if (!confirm('Ångra alla flyttade pins?')) return;
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    location.reload();
+  };
+  update();
+}
