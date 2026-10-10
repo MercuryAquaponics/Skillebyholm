@@ -36,6 +36,10 @@ function getDisplayName(rawName, lang) {
 // ─── MAP INIT ─────────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: true }).setView([59.0426, 17.608], 17);
 
+const baseCarto = L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_4gc8_1_b373b5e4d77b2f6c1d83108e', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 21, maxNativeZoom: 19
+});
 const baseOSM = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   maxZoom: 19
@@ -48,9 +52,9 @@ const baseStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/serv
   attribution: 'Tiles © Esri',
   maxZoom: 19
 });
-baseOSM.addTo(map);
+baseCarto.addTo(map);
 L.control.layers(
-  { 'Karta (byggnader)': baseOSM, 'Satellit': baseSat, 'Enkel karta': baseStreet },
+  { 'Karta (CARTO)': baseCarto, 'Karta (OpenStreetMap)': baseOSM, 'Satellit': baseSat, 'Enkel karta': baseStreet },
   null,
   { position: 'bottomright' }
 ).addTo(map);
@@ -97,7 +101,7 @@ function buildPopupHTML(place) {
 
 // ─── POSITION CORRECTION ─────────────────────────────────────────────────────
 // Moves ALL pins together. Meters north (+) / east (+). Set these once aligned.
-const OFFSET_NORTH_M = -4;
+const OFFSET_NORTH_M = 0;
 const OFFSET_EAST_M  = 0;
 const M_LAT = 1 / 111320;                                   // degrees per meter (north)
 const M_LNG = 1 / (111320 * Math.cos(59.042 * Math.PI / 180)); // degrees per meter (east)
