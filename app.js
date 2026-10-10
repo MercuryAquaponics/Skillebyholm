@@ -81,9 +81,19 @@ function buildPopupHTML(place) {
     </div>`;
 }
 
+// ─── POSITION CORRECTION ─────────────────────────────────────────────────────
+// Moves ALL pins together. Meters north (+) / east (+). Set these once aligned.
+const OFFSET_NORTH_M = 0;
+const OFFSET_EAST_M  = 0;
+const M_LAT = 1 / 111320;                                   // degrees per meter (north)
+const M_LNG = 1 / (111320 * Math.cos(59.042 * Math.PI / 180)); // degrees per meter (east)
+function shifted(place, n, e) {
+  return [place.lat + n * M_LAT, place.lng + e * M_LNG];
+}
+
 placesData.forEach(place => {
   const icon = layerIconMap[place.layer];
-  const marker = L.marker([place.lat, place.lng], { icon })
+  const marker = L.marker(shifted(place, OFFSET_NORTH_M, OFFSET_EAST_M), { icon })
     .bindPopup(buildPopupHTML(place), { maxWidth: 300 });
   layerGroups[place.layer].addLayer(marker);
   allMarkers.push({ place, marker });
@@ -143,7 +153,7 @@ function doSearch(query) {
   box.querySelectorAll('.search-item').forEach((el, i) => {
     el.addEventListener('click', () => {
       const { place, marker } = hits[i];
-      map.setView([place.lat, place.lng], 19);
+      map.setView(marker.getLatLng(), 19);
       marker.openPopup();
       box.style.display = 'none';
       document.getElementById('search').value = '';
@@ -156,3 +166,37 @@ document.addEventListener('click', e => {
     document.getElementById('search-results').style.display = 'none';
   }
 });
+
+// ─── NUDGE TOOL (open the page with ?nudge at the end of the address) ────────
+if (new URLSearchParams(location.search).has('nudge')) {
+  let n = OFFSET_NORTH_M, e = OFFSET_EAST_M;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:10000;background:#f5f0e8;border:2px solid #3a5a40;border-radius:8px;padding:10px 12px;font:13px Lato,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3)';
+  box.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px">Flytta alla pins</div>
+    <div style="display:grid;grid-template-columns:repeat(3,40px);gap:4px;justify-content:center">
+      <span></span><button data-d="N">▲</button><span></span>
+      <button data-d="W">◀</button><button data-d="0">⟲</button><button data-d="E">▶</button>
+      <span></span><button data-d="S">▼</button><span></span>
+    </div>
+    <div style="margin:8px 0 4px">Steg:
+      <select id="nudge-step"><option>0.5</option><option selected>1</option><option>3</option><option>10</option></select> m
+    </div>
+    <div id="nudge-out" style="font-weight:700"></div>`;
+  document.body.appendChild(box);
+  box.querySelectorAll('button').forEach(b => b.style.cssText = 'height:30px;cursor:pointer;font-size:14px');
+  const out = box.querySelector('#nudge-out');
+  function apply() {
+    allMarkers.forEach(({ place, marker }) => marker.setLatLng(shifted(place, n, e)));
+    out.textContent = `Norr ${n.toFixed(1)} m, Öst ${e.toFixed(1)} m`;
+  }
+  box.addEventListener('click', ev => {
+    const d = ev.target.dataset.d; if (!d) return;
+    const st = parseFloat(box.querySelector('#nudge-step').value);
+    if (d === 'N') n += st; if (d === 'S') n -= st;
+    if (d === 'E') e += st; if (d === 'W') e -= st;
+    if (d === '0') { n = OFFSET_NORTH_M; e = OFFSET_EAST_M; }
+    apply();
+  });
+  apply();
+}
