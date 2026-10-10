@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Skilleby Växtkarta</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="header-title">Skilleby <span>Växtkarta</span></div>
+  <div class="controls">
+    <div class="lang-toggle">
+      <button class="active" onclick="setLang('latin')" id="btn-latin">LAT</button>
+      <button onclick="setLang('sv')" id="btn-sv">SV</button>
+      <button onclick="setLang('en')" id="btn-en">EN</button>
+    </div>
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Sök växt…" autocomplete="off" oninput="doSearch(this.value)">
+      <div id="search-results"></div>
+    </div>
+  </div>
+  <div class="layer-panel" id="layer-panel"></div>
+</header>
+
+<div id="map"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
