@@ -46,13 +46,13 @@ const baseOSM = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 });
 const baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Tiles © Esri',
-  maxZoom: 19
+  maxZoom: 21, maxNativeZoom: 18
 });
 const baseStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Tiles © Esri',
   maxZoom: 19
 });
-baseCarto.addTo(map);
+baseSat.addTo(map);
 L.control.layers(
   { 'Karta (CARTO)': baseCarto, 'Karta (OpenStreetMap)': baseOSM, 'Satellit': baseSat, 'Enkel karta': baseStreet },
   null,
