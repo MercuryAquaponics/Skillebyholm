@@ -1,5 +1,5 @@
 // ─── LANG STATE ───────────────────────────────────────────────────────────────
-let currentLang = 'latin';
+let currentLang = 'sv';
 
 function extractLatinKey(rawName) {
   // Strip leading number/code and trailing suffixes like FK, E, fk, etc.
@@ -54,7 +54,7 @@ const baseStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/serv
 });
 baseSat.addTo(map);
 L.control.layers(
-  { 'Karta (CARTO)': baseCarto, 'Karta (OpenStreetMap)': baseOSM, 'Satellit': baseSat, 'Enkel karta': baseStreet },
+  { 'Satellit': baseSat, 'Karta (CARTO)': baseCarto, 'Karta (OpenStreetMap)': baseOSM, 'Enkel karta': baseStreet },
   null,
   { position: 'bottomright' }
 ).addTo(map);
@@ -65,9 +65,12 @@ LAYERS.forEach(l => { layerGroups[l.id] = L.layerGroup().addTo(map); });
 
 // ─── MARKER CREATION ─────────────────────────────────────────────────────────
 function makeIcon(color) {
+  const isWhite = color === '#FFFFFF' || color === '#ffffff';
+  const stroke = isWhite ? '#555' : 'white';
+  const innerFill = isWhite ? '#555' : 'white';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34" width="22" height="32">
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22S24 21 24 12C24 5.37 18.63 0 12 0z" fill="${color}" stroke="white" stroke-width="1.5"/>
-    <circle cx="12" cy="12" r="4" fill="white" fill-opacity="0.7"/>
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22S24 21 24 12C24 5.37 18.63 0 12 0z" fill="${color}" stroke="${stroke}" stroke-width="1.5"/>
+    <circle cx="12" cy="12" r="4" fill="${innerFill}" fill-opacity="0.7"/>
   </svg>`;
   return L.divIcon({
     html: svg,
@@ -84,18 +87,65 @@ LAYERS.forEach(l => { layerIconMap[l.id] = makeIcon(l.color); });
 // Markers array for search and lang updates
 const allMarkers = [];
 
+function extractMarkerCode(rawName) {
+  // Pure codes like R8, K4, B22 with nothing after = just a code, no plant name
+  if (/^[A-Z]\d+$/.test(rawName.trim())) return { code: rawName.trim(), cleanName: null };
+  // Leading number like "63 Cornus sanguinea..."
+  const numMatch = rawName.match(/^(\d+\/?\d*)\s+(.+)/);
+  if (numMatch) return { code: numMatch[1], cleanName: numMatch[2] };
+  // Leading letter-code like "B2 Abies koreana..."
+  const codeMatch = rawName.match(/^([A-Z]\d+)\s+(.+)/);
+  if (codeMatch) return { code: codeMatch[1], cleanName: codeMatch[2] };
+  // No code
+  return { code: null, cleanName: rawName };
+}
+
 function buildPopupHTML(place) {
   const layer = LAYERS.find(l => l.id === place.layer);
-  const svTrans = getTranslation(place.name, 'sv');
-  const enTrans = getTranslation(place.name, 'en');
+  const isByggnader = place.layer === 'byggnader';
+
+  if (isByggnader) {
+    return `
+      <div class="popup-inner">
+        <div class="popup-layer-tag">${layer ? layer.tooltip[currentLang] : ''}</div>
+        <div class="popup-name">${place.name}</div>
+      </div>`;
+  }
+
+  const { code, cleanName } = extractMarkerCode(place.name);
+  const svTrans = cleanName ? getTranslation(place.name, 'sv') : null;
+  const enTrans = cleanName ? getTranslation(place.name, 'en') : null;
+
+  let mainName, mainIsLatin;
+  if (currentLang === 'sv' && svTrans) {
+    mainName = svTrans; mainIsLatin = false;
+  } else if (currentLang === 'en' && enTrans) {
+    mainName = enTrans; mainIsLatin = false;
+  } else {
+    mainName = cleanName || place.name; mainIsLatin = true;
+  }
+
+  const markerLabel = currentLang === 'en' ? 'Marker' : 'Markör';
+
+  const rows = [];
+  if (!mainIsLatin && cleanName) {
+    rows.push(`<span class="popup-latin-row"><span class="trans-label">Latin</span> <span class="trans-latin">${cleanName}</span></span>`);
+  }
+  if (currentLang !== 'sv') {
+    rows.push(`<span class="popup-sv-row"><span class="trans-label">Svenska</span> ${svTrans ? svTrans : '<span class="todo">ej översatt ännu</span>'}</span>`);
+  }
+  if (currentLang !== 'en') {
+    rows.push(`<span class="popup-en-row"><span class="trans-label">English</span> ${enTrans ? enTrans : '<span class="todo">not yet translated</span>'}</span>`);
+  }
+  if (code) {
+    rows.push(`<span class="trans-label">${markerLabel}</span> ${code}`);
+  }
+
   return `
     <div class="popup-inner">
-      <div class="popup-layer-tag">${layer ? layer.name : ''}</div>
-      <div class="popup-name latin">${place.name}</div>
-      <div class="popup-translations">
-        🇸🇪 ${svTrans ? svTrans : '<span class="todo">ej översatt ännu</span>'}<br>
-        🇬🇧 ${enTrans ? enTrans : '<span class="todo">not yet translated</span>'}
-      </div>
+      <div class="popup-layer-tag">${layer ? layer.tooltip[currentLang] : ''}</div>
+      <div class="popup-name${mainIsLatin ? ' latin' : ''}">${mainName}</div>
+      ${rows.length ? `<div class="popup-translations">${rows.join('<br>')}</div>` : ''}
     </div>`;
 }
 
@@ -110,7 +160,8 @@ function shifted(place, n, e) {
 }
 
 placesData.forEach(place => {
-  const icon = layerIconMap[place.layer];
+  const color = place.color || LAYERS.find(l => l.id === place.layer)?.color || '#888';
+  const icon = place.color ? makeIcon(place.color) : layerIconMap[place.layer];
   const marker = L.marker(shifted(place, OFFSET_NORTH_M, OFFSET_EAST_M), { icon })
     .bindPopup(buildPopupHTML(place), { maxWidth: 300 });
   layerGroups[place.layer].addLayer(marker);
@@ -122,8 +173,10 @@ const panel = document.getElementById('layer-panel');
 LAYERS.forEach(layer => {
   const pill = document.createElement('label');
   pill.className = 'layer-pill checked';
+  pill.dataset.layerId = layer.id;
   pill.innerHTML = `<input type="checkbox" checked>
-    <span class="dot" style="background:${layer.color}"></span>${layer.name}`;
+    <span class="dot" style="background:${layer.color}"></span><span class="pill-label">${layer.pill.sv}</span>`;
+  pill.title = layer.tooltip.sv;
   pill.querySelector('input').addEventListener('change', e => {
     if (e.target.checked) {
       map.addLayer(layerGroups[layer.id]);
@@ -133,44 +186,198 @@ LAYERS.forEach(layer => {
       pill.classList.remove('checked');
     }
   });
+
+  // ⊞ list button — stopPropagation so it doesn't toggle the checkbox
+  const listBtn = document.createElement('button');
+  listBtn.className = 'pill-list-btn';
+  listBtn.textContent = '⊞';
+  listBtn.title = 'Visa lista';
+  listBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openListPanel(layer.id);
+  });
+  pill.appendChild(listBtn);
   panel.appendChild(pill);
 });
 
+// ─── LIST PANEL ───────────────────────────────────────────────────────────────
+let currentListLayer = null;
+
+function openListPanel(layerId) {
+  const layer = LAYERS.find(l => l.id === layerId);
+  currentListLayer = layerId;
+  const isByggnader = layerId === 'byggnader';
+
+  // Set title
+  document.getElementById('list-panel-title').textContent = layer.tooltip[currentLang];
+
+  // Narrow mode for buildings
+  const panel = document.getElementById('list-panel');
+  if (isByggnader) {
+    panel.classList.add('narrow');
+  } else {
+    panel.classList.remove('narrow');
+  }
+
+  // Show/hide table header columns
+  document.getElementById('col-latin').style.display = isByggnader ? 'none' : '';
+  document.getElementById('col-sv').style.display = isByggnader ? 'none' : '';
+  document.getElementById('col-en').style.display = isByggnader ? 'none' : '';
+  document.getElementById('col-marker').style.display = isByggnader ? 'none' : '';
+
+  // Build rows
+  const entries = allMarkers
+    .filter(({ place }) => place.layer === layerId && !place.removed)
+    .map(({ place, marker }) => {
+      const { code, cleanName } = extractMarkerCode(place.name);
+      const latinName = cleanName || place.name;
+      const svName = cleanName ? (getTranslation(place.name, 'sv') || '') : '';
+      const enName = cleanName ? (getTranslation(place.name, 'en') || '') : '';
+      return { latinName, svName, enName, code, marker, place };
+    });
+
+  // Deduplicate by latinName+code, sort alphabetically
+  const seen = new Set();
+  const unique = entries.filter(e => {
+    const key = e.latinName + '|' + (e.code || '');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  unique.sort((a, b) => a.latinName.localeCompare(b.latinName, 'sv'));
+
+  const tbody = document.getElementById('list-tbody');
+  tbody.innerHTML = '';
+  unique.forEach(({ latinName, svName, enName, code, marker, place }) => {
+    const tr = document.createElement('tr');
+    if (isByggnader) {
+      tr.innerHTML = `<td colspan="4">${latinName}</td>`;
+    } else {
+      tr.innerHTML = `
+        <td class="latin list-col-latin">${latinName}</td>
+        <td class="list-col-sv ${svName ? '' : 'todo'}">${svName || 'ej översatt'}</td>
+        <td class="list-col-en ${enName ? '' : 'todo'}">${enName || 'not translated'}</td>
+        <td class="marker">${code || '—'}</td>`;
+    }
+    tr.addEventListener('click', () => {
+      map.setView(marker.getLatLng(), 19);
+      marker.openPopup();
+    });
+    tbody.appendChild(tr);
+  });
+
+  updateListHeaders();
+  document.getElementById('list-panel').classList.add('open');
+  setTimeout(() => map.invalidateSize(), 310);
+}
+
+function closeListPanel() {
+  document.getElementById('list-panel').classList.remove('open');
+  currentListLayer = null;
+  setTimeout(() => map.invalidateSize(), 310);
+}
+
+function updateListHeaders() {
+  const markerLabel = currentLang === 'en' ? 'Marker' : 'Markör';
+  document.getElementById('col-latin').textContent = 'Latin';
+  document.getElementById('col-sv').textContent = 'Svenska';
+  document.getElementById('col-en').textContent = 'English';
+  document.getElementById('col-marker').textContent = markerLabel;
+  if (currentListLayer) {
+    const layer = LAYERS.find(l => l.id === currentListLayer);
+    document.getElementById('list-panel-title').textContent = layer.tooltip[currentLang];
+  }
+}
+
 // ─── LANGUAGE TOGGLE ─────────────────────────────────────────────────────────
+const SEARCH_PLACEHOLDER = { sv: 'Sök växt…', en: 'Search plant…', latin: 'Quaere plantam…' };
+
 function setLang(lang) {
   currentLang = lang;
   ['latin','sv','en'].forEach(l => {
     document.getElementById('btn-'+l).classList.toggle('active', l === lang);
   });
-  // Update all open popups (they auto-update on next open since content is rebuilt)
-  // Rebuild popup content for any already-open popups
+  // Update search placeholder
+  document.getElementById('search').placeholder = SEARCH_PLACEHOLDER[lang];
+  // Update layer pills and tooltips
+  document.querySelectorAll('.layer-pill').forEach(pill => {
+    const layer = LAYERS.find(l => l.id === pill.dataset.layerId);
+    if (!layer) return;
+    pill.querySelector('.pill-label').textContent = layer.pill[lang];
+    pill.title = layer.tooltip[lang];
+  });
+  // Rebuild all popup content
   allMarkers.forEach(({ place, marker }) => {
     marker.setPopupContent(buildPopupHTML(place));
   });
+  // Update list panel if open
+  updateListHeaders();
 }
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
+let highlightedMarkers = [];
+
+function makeHighlightIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34" width="28" height="40">
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 22 12 22S24 21 24 12C24 5.37 18.63 0 12 0z" fill="${color}" stroke="#FFD700" stroke-width="3"/>
+    <circle cx="12" cy="12" r="5" fill="white" fill-opacity="0.9"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [28, 40], iconAnchor: [14, 40], popupAnchor: [0, -38] });
+}
+
+function clearHighlights() {
+  highlightedMarkers.forEach(({ marker, originalIcon }) => marker.setIcon(originalIcon));
+  highlightedMarkers = [];
+}
+
+function highlightAll(hits) {
+  clearHighlights();
+  if (!hits.length) return;
+  const bounds = L.latLngBounds();
+  hits.forEach(({ place, marker }) => {
+    const layer = LAYERS.find(l => l.id === place.layer);
+    highlightedMarkers.push({ marker, originalIcon: layerIconMap[place.layer] });
+    marker.setIcon(makeHighlightIcon(layer ? layer.color : '#888'));
+    bounds.extend(marker.getLatLng());
+  });
+  map.fitBounds(bounds, { padding: [60, 60], maxZoom: 19 });
+}
+
 function doSearch(query) {
   const box = document.getElementById('search-results');
-  if (!query || query.length < 2) { box.style.display = 'none'; return; }
+  if (!query || query.length < 2) { box.style.display = 'none'; clearHighlights(); return; }
   const q = query.toLowerCase();
   const hits = allMarkers.filter(({ place }) => !place.removed && (
     place.name.toLowerCase().includes(q) ||
     (getTranslation(place.name,'sv') || '').toLowerCase().includes(q) ||
     (getTranslation(place.name,'en') || '').toLowerCase().includes(q)
-  )).slice(0, 12);
+  )).slice(0, 30);
 
-  if (!hits.length) { box.style.display = 'none'; return; }
-  box.innerHTML = hits.map(({ place }, i) => {
+  if (!hits.length) { box.style.display = 'none'; clearHighlights(); return; }
+
+  const showAllBtn = hits.length > 1
+    ? `<div class="search-show-all" id="show-all-btn">🔍 Visa alla (${hits.length})</div>`
+    : '';
+
+  box.innerHTML = showAllBtn + hits.map(({ place }, i) => {
     const sv = getTranslation(place.name, 'sv');
     const label = currentLang === 'sv' && sv ? sv : place.name;
     return `<div class="search-item" data-idx="${i}">${label}</div>`;
   }).join('');
   box.style.display = 'block';
 
+  if (hits.length > 1) {
+    document.getElementById('show-all-btn').addEventListener('click', () => {
+      highlightAll(hits);
+      box.style.display = 'none';
+    });
+  }
+
   box.querySelectorAll('.search-item').forEach((el, i) => {
     el.addEventListener('click', () => {
       const { place, marker } = hits[i];
+      clearHighlights();
       map.setView(marker.getLatLng(), 19);
       marker.openPopup();
       box.style.display = 'none';
@@ -184,6 +391,272 @@ document.addEventListener('click', e => {
     document.getElementById('search-results').style.display = 'none';
   }
 });
+
+document.getElementById('search').addEventListener('input', e => {
+  if (!e.target.value) clearHighlights();
+});
+
+// Initialise UI to default language
+setLang('sv');
+
+// ─── STUDY MENU ───────────────────────────────────────────────────────────────
+const studyLangState = { latin: true, sv: true, en: true };
+
+function openStudyMenu() {
+  // Build layer picks dynamically
+  const picks = document.getElementById('quiz-layer-picks');
+  if (!picks.children.length) {
+    LAYERS.filter(l => l.id !== 'byggnader').forEach(layer => {
+      const lbl = document.createElement('label');
+      lbl.className = 'study-toggle-pill active';
+      lbl.innerHTML = `<input type="checkbox" value="${layer.id}" checked> ${layer.pill[currentLang]}`;
+      lbl.querySelector('input').addEventListener('change', () => {
+        lbl.classList.toggle('active', lbl.querySelector('input').checked);
+      });
+      picks.appendChild(lbl);
+    });
+  }
+  // Sync radio pills
+  document.querySelectorAll('[name="qcount"],[name="qlang"],[name="alang"],[name="qmode"]').forEach(radio => {
+    const lbl = radio.closest('.study-toggle-pill');
+    if (lbl) {
+      radio.addEventListener('change', () => {
+        document.querySelectorAll(`[name="${radio.name}"]`).forEach(r => {
+          r.closest('.study-toggle-pill')?.classList.toggle('active', r.checked);
+        });
+      });
+    }
+  });
+  document.getElementById('study-overlay').style.display = 'flex';
+}
+
+function closeStudyMenu() {
+  document.getElementById('study-overlay').style.display = 'none';
+}
+
+function toggleStudyLang(lang, visible) {
+  studyLangState[lang] = visible;
+  const cls = `study-hide-${lang}`;
+  document.body.classList.toggle(cls, !visible);
+  document.getElementById(`stog-${lang}`).classList.toggle('active', visible);
+  // Rebuild all popups so they respect hidden state
+  allMarkers.forEach(({ place, marker }) => marker.setPopupContent(buildPopupHTML(place)));
+}
+
+// ─── QUIZ ENGINE ──────────────────────────────────────────────────────────────
+let quizState = null;
+
+function buildQuizPool(layerIds) {
+  // Get all unique plants (by latinName) from chosen layers, excluding byggnader and unknown/pure-code
+  const seen = new Set();
+  const pool = [];
+  allMarkers.forEach(({ place }) => {
+    if (!layerIds.includes(place.layer)) return;
+    const { cleanName } = extractMarkerCode(place.name);
+    if (!cleanName) return;
+    const latin = cleanName;
+    const sv = getTranslation(place.name, 'sv');
+    const en = getTranslation(place.name, 'en');
+    // Need at least one translation to be quizzable
+    if (!sv && !en) return;
+    const key = latin.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    pool.push({ latin, sv: sv || '', en: en || '' });
+  });
+  return pool;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function getPlantName(plant, lang) {
+  if (lang === 'latin') return plant.latin;
+  return plant[lang] || plant.latin;
+}
+
+function startQuiz() {
+  const layerIds = [...document.querySelectorAll('#quiz-layer-picks input:checked')].map(i => i.value);
+  if (!layerIds.length) { alert('Välj minst en samling!'); return; }
+
+  const count = parseInt(document.querySelector('[name="qcount"]:checked').value);
+  const qLang = document.querySelector('[name="qlang"]:checked').value;
+  const aLang = document.querySelector('[name="alang"]:checked').value;
+  const mode  = document.querySelector('[name="qmode"]:checked').value;
+
+  const pool = buildQuizPool(layerIds);
+  if (pool.length < 6) { alert('För få växter i vald samling (behövs minst 6)!'); return; }
+
+  const questions = shuffle(pool).slice(0, Math.min(count, pool.length));
+
+  quizState = {
+    questions, qLang, aLang, mode,
+    current: 0, correct: 0,
+    answers: [], // { question, correctAnswer, userAnswer, wasCorrect }
+    pool // for generating distractors
+  };
+
+  closeStudyMenu();
+  document.getElementById('quiz-overlay').style.display = 'flex';
+  document.getElementById('quiz-results').style.display = 'none';
+  document.getElementById('quiz-inner').style.display = 'flex';
+  renderQuestion();
+}
+
+function renderQuestion() {
+  const { questions, current, correct, qLang, aLang, mode, pool } = quizState;
+  const total = questions.length;
+  const plant = questions[current];
+
+  // Progress
+  document.getElementById('quiz-progress-bar').style.width = `${(current / total) * 100}%`;
+  document.getElementById('quiz-score-text').textContent = `${correct} / ${current}`;
+
+  // Question label
+  const langLabels = { latin: 'Latin', sv: 'Svenska', en: 'English' };
+  document.getElementById('quiz-q-label').textContent =
+    `Vad heter denna på ${langLabels[aLang]}? (${current + 1} / ${total})`;
+  document.getElementById('quiz-question').textContent = getPlantName(plant, qLang);
+  document.getElementById('quiz-question').style.fontStyle = qLang === 'latin' ? 'italic' : 'normal';
+
+  document.getElementById('quiz-feedback').textContent = '';
+  document.getElementById('quiz-feedback').className = '';
+  document.getElementById('quiz-next-btn').style.display = 'none';
+
+  const correctAnswer = getPlantName(plant, aLang);
+
+  if (mode === 'multi') {
+    document.getElementById('quiz-free-wrap').style.display = 'none';
+    document.getElementById('quiz-choices').style.display = 'grid';
+
+    // Pick 5 distractors from pool
+    const others = shuffle(pool.filter(p => p.latin !== plant.latin))
+      .slice(0, 5)
+      .map(p => getPlantName(p, aLang));
+    const choices = shuffle([correctAnswer, ...others]);
+
+    const choicesEl = document.getElementById('quiz-choices');
+    choicesEl.innerHTML = '';
+    choices.forEach(choice => {
+      const btn = document.createElement('button');
+      btn.className = 'quiz-choice';
+      btn.textContent = choice;
+      btn.onclick = () => submitMultiChoice(choice, correctAnswer);
+      choicesEl.appendChild(btn);
+    });
+  } else {
+    document.getElementById('quiz-choices').style.display = 'none';
+    document.getElementById('quiz-free-wrap').style.display = 'flex';
+    const input = document.getElementById('quiz-free-input');
+    input.value = '';
+    input.className = '';
+    input.disabled = false;
+    document.getElementById('quiz-free-submit').disabled = false;
+    setTimeout(() => input.focus(), 50);
+  }
+}
+
+function submitMultiChoice(chosen, correct) {
+  const isCorrect = chosen.trim().toLowerCase() === correct.trim().toLowerCase();
+  recordAnswer(chosen, correct, isCorrect);
+
+  // Highlight buttons
+  document.querySelectorAll('.quiz-choice').forEach(btn => {
+    btn.disabled = true;
+    if (btn.textContent.trim().toLowerCase() === correct.trim().toLowerCase()) {
+      btn.classList.add('correct');
+    } else if (btn.textContent.trim() === chosen.trim() && !isCorrect) {
+      btn.classList.add('wrong');
+    }
+  });
+
+  showFeedback(isCorrect, correct);
+}
+
+function submitFreeAnswer() {
+  const input = document.getElementById('quiz-free-input');
+  const { questions, current, aLang } = quizState;
+  const correct = getPlantName(questions[current], aLang);
+  const chosen = input.value.trim();
+  if (!chosen) return;
+
+  const isCorrect = chosen.toLowerCase() === correct.toLowerCase();
+  recordAnswer(chosen, correct, isCorrect);
+
+  input.disabled = true;
+  document.getElementById('quiz-free-submit').disabled = true;
+  input.classList.add(isCorrect ? 'correct' : 'wrong');
+  showFeedback(isCorrect, correct);
+}
+
+function recordAnswer(userAnswer, correctAnswer, wasCorrect) {
+  const { questions, current, qLang } = quizState;
+  if (wasCorrect) quizState.correct++;
+  quizState.answers.push({
+    question: getPlantName(questions[current], qLang),
+    correctAnswer,
+    userAnswer,
+    wasCorrect
+  });
+}
+
+function showFeedback(isCorrect, correct) {
+  const fb = document.getElementById('quiz-feedback');
+  if (isCorrect) {
+    fb.textContent = '✓ Rätt!';
+    fb.className = '';
+  } else {
+    fb.textContent = `✗ Rätt svar: ${correct}`;
+    fb.className = 'wrong';
+  }
+  document.getElementById('quiz-next-btn').style.display = 'block';
+}
+
+function nextQuestion() {
+  quizState.current++;
+  if (quizState.current >= quizState.questions.length) {
+    showResults();
+  } else {
+    renderQuestion();
+  }
+}
+
+function showResults() {
+  const { answers, correct, questions } = quizState;
+  const total = questions.length;
+
+  document.getElementById('quiz-inner').style.display = 'none';
+  document.getElementById('quiz-results').style.display = 'flex';
+
+  document.getElementById('quiz-results-score').textContent =
+    `${correct} rätt av ${total} (${Math.round(correct/total*100)}%)`;
+
+  const list = document.getElementById('quiz-results-list');
+  list.innerHTML = '';
+  answers.forEach(({ question, correctAnswer, userAnswer, wasCorrect }) => {
+    const row = document.createElement('div');
+    row.className = `result-row ${wasCorrect ? 'correct' : 'wrong'}`;
+    row.innerHTML = `
+      <span class="result-icon">${wasCorrect ? '✓' : '✗'}</span>
+      <span class="result-q">${question}</span>
+      <span class="result-a">${wasCorrect
+        ? `<span class="correct-ans">${correctAnswer}</span>`
+        : `${userAnswer} → <span class="correct-ans">${correctAnswer}</span>`
+      }</span>`;
+    list.appendChild(row);
+  });
+}
+
+function exitQuiz() {
+  document.getElementById('quiz-overlay').style.display = 'none';
+  quizState = null;
+}
 
 // ─── NUDGE TOOL (open the page with ?nudge at the end of the address) ────────
 if (new URLSearchParams(location.search).has('nudge')) {
@@ -223,7 +696,7 @@ if (new URLSearchParams(location.search).has('nudge')) {
 // Drag pins, add new pins, remove pins. Changes are remembered in this browser
 // only, until you download them and send them on. Do not use together with ?nudge.
 if (new URLSearchParams(location.search).has('edit')) {
-  const KEY = 'skilleby-edits';
+  const KEY = 'skilleby-edits-v13';
   const orig = placesData.map(p => [p.lat, p.lng]);
   let st = { moved: {}, removed: [], added: [] };
   try {

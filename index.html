@@ -15,9 +15,9 @@
   <div class="header-title">Skilleby <span>Växtkarta</span></div>
   <div class="controls">
     <div class="lang-toggle">
-      <button class="active" onclick="setLang('latin')" id="btn-latin">LAT</button>
-      <button onclick="setLang('sv')" id="btn-sv">SV</button>
+      <button class="active" onclick="setLang('sv')" id="btn-sv">SV</button>
       <button onclick="setLang('en')" id="btn-en">EN</button>
+      <button onclick="setLang('latin')" id="btn-latin">LAT</button>
     </div>
     <div class="search-wrap">
       <input type="text" id="search" placeholder="Sök växt…" autocomplete="off" oninput="doSearch(this.value)">
@@ -25,9 +25,127 @@
     </div>
   </div>
   <div class="layer-panel" id="layer-panel"></div>
+  <button id="study-btn" onclick="openStudyMenu()">📖 Studera</button>
 </header>
 
-<div id="map"></div>
+<!-- ── STUDY MENU MODAL ─────────────────────────────────────────────────── -->
+<div id="study-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeStudyMenu()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📖 Studiemenyn</span>
+      <button class="modal-close" onclick="closeStudyMenu()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-title">Studieläge — Dölj språk</div>
+        <div class="modal-section-desc">Välj vilka kolumner och etiketter som visas i listan och popups.</div>
+        <div class="study-toggles">
+          <label class="study-toggle-pill active" id="stog-latin"><input type="checkbox" checked onchange="toggleStudyLang('latin',this.checked)"> Latin</label>
+          <label class="study-toggle-pill active" id="stog-sv"><input type="checkbox" checked onchange="toggleStudyLang('sv',this.checked)"> Svenska</label>
+          <label class="study-toggle-pill active" id="stog-en"><input type="checkbox" checked onchange="toggleStudyLang('en',this.checked)"> English</label>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Frågesport</div>
+        <div class="modal-row">
+          <span class="modal-label">Samlingar</span>
+          <div id="quiz-layer-picks" class="study-toggles"></div>
+        </div>
+        <div class="modal-row">
+          <span class="modal-label">Antal frågor</span>
+          <div class="study-toggles">
+            <label class="study-toggle-pill active" id="qcount-20"><input type="radio" name="qcount" value="20" checked> 20</label>
+            <label class="study-toggle-pill" id="qcount-50"><input type="radio" name="qcount" value="50"> 50</label>
+            <label class="study-toggle-pill" id="qcount-100"><input type="radio" name="qcount" value="100"> 100</label>
+          </div>
+        </div>
+        <div class="modal-row">
+          <span class="modal-label">Fråga på</span>
+          <div class="study-toggles">
+            <label class="study-toggle-pill active" id="qlang-latin"><input type="radio" name="qlang" value="latin" checked> Latin</label>
+            <label class="study-toggle-pill" id="qlang-sv"><input type="radio" name="qlang" value="sv"> Svenska</label>
+            <label class="study-toggle-pill" id="qlang-en"><input type="radio" name="qlang" value="en"> English</label>
+          </div>
+        </div>
+        <div class="modal-row">
+          <span class="modal-label">Svara på</span>
+          <div class="study-toggles">
+            <label class="study-toggle-pill" id="alang-latin"><input type="radio" name="alang" value="latin"> Latin</label>
+            <label class="study-toggle-pill active" id="alang-sv"><input type="radio" name="alang" value="sv" checked> Svenska</label>
+            <label class="study-toggle-pill" id="alang-en"><input type="radio" name="alang" value="en"> English</label>
+          </div>
+        </div>
+        <div class="modal-row">
+          <span class="modal-label">Läge</span>
+          <div class="study-toggles">
+            <label class="study-toggle-pill active" id="qmode-multi"><input type="radio" name="qmode" value="multi" checked> Flerval (6)</label>
+            <label class="study-toggle-pill" id="qmode-free"><input type="radio" name="qmode" value="free"> Fritext</label>
+          </div>
+        </div>
+        <button class="start-quiz-btn" onclick="startQuiz()">▶ Starta frågesport</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── QUIZ OVERLAY ──────────────────────────────────────────────────────── -->
+<div id="quiz-overlay" style="display:none">
+  <div id="quiz-inner">
+    <div id="quiz-topbar">
+      <div id="quiz-progress-wrap"><div id="quiz-progress-bar"></div></div>
+      <div id="quiz-score-wrap">
+        <span id="quiz-score-text">0 / 0</span>
+        <button id="quiz-exit-btn" onclick="exitQuiz()">✕ Avsluta</button>
+      </div>
+    </div>
+    <div id="quiz-question-area">
+      <div id="quiz-q-label"></div>
+      <div id="quiz-question"></div>
+    </div>
+    <div id="quiz-answer-area">
+      <div id="quiz-choices"></div>
+      <div id="quiz-free-wrap" style="display:none">
+        <input type="text" id="quiz-free-input" placeholder="Skriv ditt svar…" autocomplete="off"
+          onkeydown="if(event.key==='Enter')submitFreeAnswer()">
+        <button id="quiz-free-submit" onclick="submitFreeAnswer()">Svara</button>
+      </div>
+    </div>
+    <div id="quiz-feedback"></div>
+    <button id="quiz-next-btn" onclick="nextQuestion()" style="display:none">Nästa →</button>
+  </div>
+  <div id="quiz-results" style="display:none">
+    <div id="quiz-results-inner">
+      <div id="quiz-results-title">Resultat</div>
+      <div id="quiz-results-score"></div>
+      <div id="quiz-results-list"></div>
+      <button class="start-quiz-btn" onclick="exitQuiz()">Tillbaka till kartan</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="content-wrap">
+  <div id="list-panel">
+    <div id="list-panel-header">
+      <span id="list-panel-title">—</span>
+      <button id="list-panel-close" onclick="closeListPanel()">✕</button>
+    </div>
+    <div id="list-panel-body">
+      <table id="list-table">
+        <thead>
+          <tr>
+            <th id="col-latin">Latin</th>
+            <th id="col-sv">Svenska</th>
+            <th id="col-en">English</th>
+            <th id="col-marker">Markör</th>
+          </tr>
+        </thead>
+        <tbody id="list-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
 
 <script src="data.js"></script>
 <script src="app.js"></script>
